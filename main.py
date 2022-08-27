@@ -1,26 +1,25 @@
+import sys
 import requests
 import re
 import os
 import subprocess
 from bs4 import BeautifulSoup
 
-API_BASE_PATH = 'https://suporteic.ufba.br/_submissao'
-# API_BASE_PATH = 'http://localhost:8080'
+# API_BASE_PATH = 'https://suporteic.ufba.br/_submissao'
+API_BASE_PATH = 'http://localhost:8080'
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
 
 class SubmissaoService:
-    def __init__(self, api_base_path=None, username=None, password=None):
+    def __init__(self, api_base_path=None):
         self.api_base_path = api_base_path or API_BASE_PATH
-        self.username = username or os.getenv('SUBMISSAO_USERNAME')
-        self.password = password or os.getenv('SUBMISSAO_PASSWORD')
         self.token = None
 
-    def login(self):
-        resp = requests.post(f'{API_BASE_PATH}/login.php', \
+    def login(self, username, password):
+        resp = requests.post(f'{self.api_base_path}/login.php', \
             json = {
-                'username': USERNAME,
-                'password': PASSWORD
+                'username': username,
+                'password': password
             })
 
         if (resp.status_code == 200):
@@ -28,9 +27,20 @@ class SubmissaoService:
         else:
             raise Exception("Erro ao fazer login")
 
-    def get_assignments(self):
-        # TODO
-        pass
+    def get_assignments(self, pattern='%'):
+        r = requests.get(f'{self.api_base_path}/get-assignments.php', \
+            params={'assignment_url': pattern})
+        if (r.status_code == 200):
+            return r.text.strip().split('\n')
+        else:
+            raise Exception("Erro ao obter assignments")
+
+    def evaluate_all(self):
+        ret = {}
+        for assignment in self.get_assignments():
+            ass = AssignmentService(assignment, self.api_base_path, self.token)
+            ret.update(ass.evaluate_all())
+        return ret
 
 class AssignmentService:
     def __init__(self, assignment_url, api_base_path, token):
@@ -60,7 +70,7 @@ class AssignmentService:
             return ''
 
     def _get_stats(self):
-        resp = requests.get(f'{API_BASE_PATH}/assignment-stats.php', \
+        resp = requests.get(f'{self.api_base_path}/assignment-stats.php', \
             params = {
                 'url': self.assignment_url,
                 'submission_type': 'batch'
@@ -75,15 +85,6 @@ class AssignmentService:
         csv = self._get_stats()
         rows = [line.split('\t') for line in csv.strip().split("\n")]
         return [row[0] for row in rows[1:]]
-        # resp = requests.get(f'{API_BASE_PATH}/assignment-stats.php', \
-        #     params = {
-        #         'url': self.assignment_url,
-        #         'submission_type': 'batch'
-        #     })
-
-        # if (resp.status_code == 200):
-        # else:
-        #     raise Exception("Erro ao consultar estatísticas")
 
     def get_number_of_questions(self):
         csv = self._get_stats()
@@ -129,10 +130,12 @@ class AssignmentService:
                 scores.append(evaluation)
                 print(username, question_index, evaluation)
             result[username] = scores
-        return result
+        return {self.assignment_url: result}
 
-sub = SubmissaoService()
-sub.login()
-# ass = AssignmentService('http://localhost:4000/aulas/poo/ex-python-intro', sub.api_base_path, sub.token)
-ass = AssignmentService('https://rodrigorgs.github.io/aulas/poo/ex-python-intro', sub.api_base_path, sub.token)
-print(ass.evaluate_all())
+def main():
+    sub = SubmissaoService(API_BASE_PATH)
+    sub.login(USERNAME, PASSWORD)
+    print(sub.evaluate_all())
+
+if __name__ == '__main__':
+    main()
