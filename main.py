@@ -1,18 +1,20 @@
+from email.policy import default
+import json
 import sys
 import requests
 import re
 import os
 import subprocess
+from collections import defaultdict
 from bs4 import BeautifulSoup
 
-# API_BASE_PATH = 'https://suporteic.ufba.br/_submissao'
-API_BASE_PATH = 'http://localhost:8080'
+API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
 
 class SubmissaoService:
-    def __init__(self, api_base_path=None):
-        self.api_base_path = api_base_path or API_BASE_PATH
+    def __init__(self, api_base_path):
+        self.api_base_path = api_base_path
         self.token = None
 
     def login(self, username, password):
@@ -35,11 +37,11 @@ class SubmissaoService:
         else:
             raise Exception("Erro ao obter assignments")
 
-    def evaluate_all(self):
+    def evaluate_all(self, update=False):
         ret = {}
         for assignment in self.get_assignments():
             ass = AssignmentService(assignment, self.api_base_path, self.token)
-            ret.update(ass.evaluate_all())
+            ret.update(ass.evaluate_all(update))
         return ret
 
 class AssignmentService:
@@ -105,7 +107,25 @@ class AssignmentService:
                 raise Exception("Erro ao obter resposta:", username)
             self.answers = r.json()
         return self.answers
-    
+
+    def get_all_answers(self):
+        if self.answers is None:
+            r = requests.post(f'{self.api_base_path}/get-answers2.php', \
+                headers = {
+                    'Authorization': 'Bearer ' + self.token
+                },
+                json = {
+                    'assignment_url': self.assignment_url,
+                    'username': '%',
+                    'submission_type': 'batch'
+                })
+            if r.status_code != 200:
+                raise Exception("Erro ao obter respostas")
+            self.answers = r.json()
+
+        return self.answers
+
+
     def evaluate(self, answer, question_index):
         '''
         Return True if the answer passes the tests, false otherwise
@@ -118,24 +138,41 @@ class AssignmentService:
         proc.wait()
         return proc.returncode == 0
 
-    def evaluate_all(self):
-        result = {}
-        usernames = [x for x in self.get_submitters() if len(x) > 0]
-        n_questions = self.get_number_of_questions()
-        for username in usernames:
-            scores = []
-            answers = self.get_answers(username)
-            for question_index in range(n_questions):
-                evaluation = self.evaluate(answers[question_index], question_index)
-                scores.append(evaluation)
-                print(username, question_index, evaluation)
-            result[username] = scores
-        return {self.assignment_url: result}
+    def update_score(self, id, score):
+        r = requests.post(f'{self.api_base_path}/update-score.php', \
+            headers = {
+                'Authorization': 'Bearer ' + self.token
+            },
+            json = {
+                'id': id,
+                'score': score
+            })
+        if r.status_code != 200:
+            raise Exception("Erro ao atualizar score")
+
+    def evaluate_all(self, update=False):
+        n = self.get_number_of_questions()
+        results = defaultdict(lambda: [0] * n)
+        answers = self.get_all_answers()
+        for answer in answers:
+            score = answer['score']
+            if score is None:
+                success = self.evaluate(answer['answer'], answer['question_index'])
+                score = 1.0 if success else 0.0
+                if update:
+                    self.update_score(answer['id'], score)
+            else:
+                score = float(score)
+            username = answer['username']
+            question_index = answer['question_index']
+            results[username][question_index] = score
+            print(username, question_index, score)
+        return {self.assignment_url: dict(results)}
 
 def main():
     sub = SubmissaoService(API_BASE_PATH)
     sub.login(USERNAME, PASSWORD)
-    print(sub.evaluate_all())
+    print(sub.evaluate_all(update=True))
 
 if __name__ == '__main__':
     main()
