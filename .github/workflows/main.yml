@@ -1,0 +1,23 @@
+name: Avalia submissões
+
+on:
+  push:
+    branches: [ '*' ]
+  schedule:
+    - cron:  '0 4 * * *'
+
+jobs:
+  avaliacao:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: docker-practice/actions-setup-docker@master
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' 
+      - run: python main.py
+        env:
+          SUBMISSAO_API_BASE_PATH: ${{ secrets.SUBMISSAO_API_BASE_PATH }}
+          SUBMISSAO_USERNAME: ${{ secrets.SUBMISSAO_USERNAME }}
+          SUBMISSAO_PASSWORD: ${{ secrets.SUBMISSAO_PASSWORD }}
