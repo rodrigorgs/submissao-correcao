@@ -37,11 +37,11 @@ class SubmissaoService:
         else:
             raise Exception("Erro ao obter assignments")
 
-    def evaluate_all(self, update=False):
+    def evaluate_all(self, update=False, overwrite=False):
         ret = {}
         for assignment in self.get_assignments():
             ass = AssignmentService(assignment, self.api_base_path, self.token)
-            ret.update(ass.evaluate_all(update))
+            ret.update(ass.evaluate_all(update, overwrite))
         return ret
 
 class AssignmentService:
@@ -62,12 +62,20 @@ class AssignmentService:
             self.codes = ret
         return self.codes
     
-    def get_tests(self, question_index):
-        code = self.get_code_in_textareas()[question_index]
+    def _get_tests_string_index(self, code):
+        '''Returns index where tests start in a string (code)'''
         regex = re.compile('^### Test', re.MULTILINE)
         m = regex.search(code)
         if m:
-            return code[m.start():]
+            return m.start()
+        else:
+            return None
+
+    def get_tests(self, question_index):
+        code = self.get_code_in_textareas()[question_index]
+        idx = self._get_tests_string_index(code)
+        if idx:
+            return code[idx:]
         else:
             return ''
 
@@ -121,17 +129,29 @@ class AssignmentService:
                 })
             if r.status_code != 200:
                 raise Exception("Erro ao obter respostas")
-            self.answers = r.json()
+            try:
+                self.answers = r.json()
+            except json.decoder.JSONDecodeError as e:
+                print(r.text)
+                raise e
 
         return self.answers
 
+    def answer_with_tests(self, answer, question_index):
+        idx_test_in_answer = self._get_tests_string_index(answer)
+        if idx_test_in_answer is not None:
+            answer = answer[0:idx_test_in_answer]
+        
+        tests = self.get_tests(question_index)
+        return answer + tests
 
     def evaluate(self, answer, question_index):
         '''
         Return True if the answer passes the tests, false otherwise
         '''
         # answer = self.get_answers(username)[question_index]
-        answer += '\n' + self.get_tests(question_index)
+        # answer += '\n' + self.get_tests(question_index)
+        answer = self.answer_with_tests(answer, question_index)
         cmd = ['docker', 'run', '-i', '--rm', 'python:3.10-alpine', '/bin/sh', '-c', 'python', '-']
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         output, errors = proc.communicate(input=answer)
@@ -150,13 +170,13 @@ class AssignmentService:
         if r.status_code != 200:
             raise Exception("Erro ao atualizar score")
 
-    def evaluate_all(self, update=False):
+    def evaluate_all(self, update=False, overwrite=False):
         n = self.get_number_of_questions()
         results = defaultdict(lambda: [0] * n)
         answers = self.get_all_answers()
         for answer in answers:
             score = answer['score']
-            if score is None:
+            if score is None or overwrite:
                 success = self.evaluate(answer['answer'], answer['question_index'])
                 score = 1.0 if success else 0.0
                 if update:
@@ -172,7 +192,7 @@ class AssignmentService:
 def main():
     sub = SubmissaoService(API_BASE_PATH)
     sub.login(USERNAME, PASSWORD)
-    print(sub.evaluate_all(update=True))
+    print(sub.evaluate_all(update=True, overwrite=True))
 
 if __name__ == '__main__':
     main()
