@@ -192,7 +192,7 @@ class AssignmentService:
 def main():
     sub = SubmissaoService(API_BASE_PATH)
     sub.login(USERNAME, PASSWORD)
-    print(sub.evaluate_all(update=True, overwrite=True))
+    print(sub.evaluate_all(update=True, overwrite=False))
 
 if __name__ == '__main__':
     main()
