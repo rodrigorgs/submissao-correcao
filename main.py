@@ -80,6 +80,9 @@ class AssignmentService:
             return ''
 
     def _get_stats(self):
+        if '0.0.0.0' in self.assignment_url:
+            return ''
+        print('get_stats ', self.assignment_url)
         resp = requests.get(f'{self.api_base_path}/assignment-stats.php', \
             params = {
                 'url': self.assignment_url,
@@ -117,23 +120,31 @@ class AssignmentService:
         return self.answers
 
     def get_all_answers(self):
+        if 'ex-python-estatico' in self.assignment_url:
+            return []
         if self.answers is None:
+            payload = {
+                    'assignment_url': self.assignment_url,
+                    'username': '%',
+                    'submission_type': 'batch'
+                }
             r = requests.post(f'{self.api_base_path}/get-answers2.php', \
                 headers = {
                     'Authorization': 'Bearer ' + self.token
                 },
-                json = {
-                    'assignment_url': self.assignment_url,
-                    'username': '%',
-                    'submission_type': 'batch'
-                })
+                json = payload)
             if r.status_code != 200:
                 raise Exception("Erro ao obter respostas")
-            try:
-                self.answers = r.json()
-            except json.decoder.JSONDecodeError as e:
-                print(r.text)
-                raise e
+            print('json ', payload)
+            # print('content ', r.content.decode("utf-8") )
+            if len(r.content) < 5:
+                return []
+            else:
+                try:
+                    self.answers = r.json()
+                except json.decoder.JSONDecodeError as e:
+                    print(r.text)
+                    raise e
 
         return self.answers
 
