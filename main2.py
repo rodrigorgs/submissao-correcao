@@ -56,7 +56,8 @@ class EzAPI:
             raise Exception("Error when updating score")
 
 class ScriptRunner:
-    def __init__(self, reuse_container=True):
+    def __init__(self, reuse_container=True, timeout_seconds=3):
+        self.timeout_seconds = timeout_seconds
         container_name = 'ezsubmission-python'
         client = docker.from_env()
         container = None
@@ -99,8 +100,7 @@ class ScriptRunner:
             f.write(input)
 
         output = io.StringIO()
-        # TODO: kill process after 5 seconds
-        res = self.container.exec_run('/bin/sh -c "cat /app/input.txt | python /app/script.py"', stream=True, demux=False)
+        res = self.container.exec_run(f'/bin/sh -c "cat /app/input.txt | timeout {self.timeout_seconds}s python /app/script.py"', stream=True, demux=False)
         for line in res.output:
             output.write(line.decode('utf-8'))
         
