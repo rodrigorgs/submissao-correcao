@@ -1,5 +1,6 @@
 import requests
 import os
+import re
 import io
 import subprocess
 import docker
@@ -110,10 +111,16 @@ class TestRunner:
         self.script_runner = ScriptRunner()
 
     def evaluate_with_testcode(self, answer, tests):
-        # TODO: capture print (print = io.StringBuffer...) before script
-        full_source = f'{answer}\n{tests}'
+        full_source = f'''
+__print = print
+print = lambda *args, **kwargs: None
+{answer}
+print = __print
+{tests}
+'''
         exit_code, output = self.script_runner.run(full_source)
-        return output.strip() == ''
+        success = output.strip() == '' or re.match('^[.]+$', output.split('\n')[0])
+        return success
 
     # # TODO: evaluate_with_testcases
     # def evaluate_with_testcases(self, answer, tests):
