@@ -122,11 +122,14 @@ print = __print
         success = output.strip() == '' or re.match('^[.]+$', output.split('\n')[0])
         return success
 
-    # # TODO: evaluate_with_testcases
-    # def evaluate_with_testcases(self, answer, tests):
-    #     cases = tests.strip().split('=====')
-    #     for case in cases:
-    #         pass
+    def evaluate_with_testcases(self, answer, tests):
+        cases = [c.split(']]]') for c in tests.strip().split('=====') if c.strip() != '']        
+        success_count = 0
+        for test_in, test_out in cases:
+            exit_code, output = self.script_runner.run(answer, test_in)
+            if output.strip() == test_out.strip():
+                success_count += 1
+        return success_count == len(cases)
 
 class AssignmentService:
     def __init__(self):
@@ -147,7 +150,10 @@ class Assignment:
         r = requests.get(self.assignment_url)
         soup = BeautifulSoup(r.content, 'html5lib')
         for test in soup.select('.testcases, .testcode'):
-            ret.append(test.contents[0])
+            ret.append({
+                'contents': test.contents[0],
+                'type': test['class'][0]
+            })
         self.tests = ret
 
     def get_test_for_question(self, question_index):
@@ -168,7 +174,14 @@ def main():
                 answer = submission['answer']
                 tests = service.get_assignment(assignment['assignment_url']).get_test_for_question(submission['question_index'])
                 score = 0
-                if runner.evaluate_with_testcode(answer, tests):
+                success = None
+                if tests['type'] == 'testcases':
+                    print('testcases')
+                    success = runner.evaluate_with_testcases(answer, tests['contents'])
+                elif tests['type'] == 'testcode':
+                    print('testcode')
+                    success = runner.evaluate_with_testcode(answer, tests['contents'])
+                if success:
                     score = 1
                 print('score:', score)
                 submissions_to_update.append({ 'id': submission['id'], 'score': score })                
