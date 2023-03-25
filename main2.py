@@ -1,6 +1,8 @@
 import requests
 import os
+import io
 import subprocess
+import docker
 from bs4 import BeautifulSoup
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
@@ -52,26 +54,72 @@ class EzAPI:
             print(r)
             raise Exception("Error when updating score")
 
+class ScriptRunner:
+    def __init__(self, reuse_container=True):
+        container_name = 'ezsubmission-python'
+        client = docker.from_env()
+        container = None
+        try:
+            container = client.containers.get(container_name)
+            if not reuse_container:
+                print('Removing existing container...')
+                if container.status == "running":
+                    container.stop()
+                container.remove()
+        except docker.errors.NotFound:
+            pass
+
+        if container is None:
+            print('Creating container...')
+            container = client.containers.create(
+                image='python:3.10-alpine',
+                name=container_name,
+                command='sleep infinity',  # Keeps the container running
+                volumes={os.path.abspath("app/"): {'bind': '/app', 'mode': 'ro'}},
+            )
+            print('Starting container...')
+            container.start()
+            print('Done')
+        else:
+            print('Reusing existing container...')
+        self.container = container
+
+    def stop(self):
+        self.container.stop()
+        self.container.remove(force=True)
+
+    def run(self, code, input=''):
+        print('Running code...')
+        if not os.path.exists('app'):
+            os.makedirs('app')
+        with open('app/script.py', 'w') as f:
+            f.write(code)
+        with open('app/input.txt', 'w') as f:
+            f.write(input)
+
+        output = io.StringIO()
+        # TODO: kill process after 5 seconds
+        res = self.container.exec_run('/bin/sh -c "cat /app/input.txt | python /app/script.py"', stream=True, demux=False)
+        for line in res.output:
+            output.write(line.decode('utf-8'))
+        
+        return (res.exit_code, output.getvalue())
+
 class TestRunner:
-    # TODO: use a single docker container to evaluate multiple answers, with a readonly filesystem
-    
-    def run_python(self, code):
-        cmd = ['docker', 'run', '-i', '--rm', 'python:3.10-alpine', '/bin/sh', '-c', 'python', '-']
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        output, errors = proc.communicate(input=code)
-        proc.wait()
-        return proc
+    def __init__(self):
+        self.script_runner = ScriptRunner()
 
     def evaluate_with_testcode(self, answer, tests):
+        # TODO: capture print (print = io.StringBuffer...) before script
         full_source = f'{answer}\n{tests}'
-        proc = self.run_python(full_source)
-        return proc.returncode == 0
+        exit_code, output = self.script_runner.run(full_source)
+        return output.strip() == ''
 
-    # TODO: evaluate_with_testcases
-    def evaluate_with_testcases(self, answer, tests):
-        cases = tests.strip().split('=====')
-        for case in cases:
-            pass
+    # # TODO: evaluate_with_testcases
+    # def evaluate_with_testcases(self, answer, tests):
+    #     cases = tests.strip().split('=====')
+    #     for case in cases:
+    #         pass
 
 class AssignmentService:
     def __init__(self):

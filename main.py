@@ -1,4 +1,5 @@
 from email.policy import default
+import time
 import json
 import sys
 import requests
@@ -11,6 +12,8 @@ from bs4 import BeautifulSoup
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
+
+
 
 class SubmissaoService:
     def __init__(self, api_base_path):
@@ -41,7 +44,11 @@ class SubmissaoService:
         ret = {}
         for assignment in self.get_assignments():
             ass = AssignmentService(assignment, self.api_base_path, self.token)
-            ret.update(ass.evaluate_all(update, overwrite))
+            try:
+                ret.update(ass.evaluate_all(update, overwrite))
+            except Exception as e:
+                print(e)
+            time.sleep(2)
         return ret
 
 class AssignmentService:
@@ -54,6 +61,7 @@ class AssignmentService:
 
     def get_code_in_textareas(self):
         if self.codes is None:
+            print('get_code_in_textareas ', self.assignment_url)
             r = requests.get(self.assignment_url)
             soup = BeautifulSoup(r.content, 'html5lib')
             ret = []
@@ -82,13 +90,21 @@ class AssignmentService:
     def _get_stats(self):
         if '0.0.0.0' in self.assignment_url:
             return ''
-        print('get_stats ', self.assignment_url)
+        print('_get_stats ', self.assignment_url)
         resp = requests.get(f'{self.api_base_path}/assignment-stats.php', \
             params = {
                 'url': self.assignment_url,
                 'submission_type': 'batch'
             })
-
+        # resp = requests.post(f'{self.api_base_path}/assignment-stats3.php', \
+        #     json = {
+        #         'assignment_urls': [self.assignment_url],
+        #         'submission_type': 'batch'
+        #     },
+        #     headers = {
+        #             'Authorization': 'Bearer ' + self.token
+        #     },)
+        print('_get_stats ok')
         if (resp.status_code == 200):
             return resp.text
         else:
@@ -104,6 +120,7 @@ class AssignmentService:
         return len(csv.split('\n')[0].split('\t')) - 2
 
     def get_answers(self, username):
+        print('get_answers ', self.assignment_url)
         if self.answers is None:
             r = requests.post(f'{self.api_base_path}/get-answers.php', \
                 headers = {
@@ -128,6 +145,7 @@ class AssignmentService:
                     'username': '%',
                     'submission_type': 'batch'
                 }
+            print('get_all_answers ', self.assignment_url)
             r = requests.post(f'{self.api_base_path}/get-answers2.php', \
                 headers = {
                     'Authorization': 'Bearer ' + self.token
@@ -170,6 +188,7 @@ class AssignmentService:
         return proc.returncode == 0
 
     def update_score(self, id, score):
+        print('update_score ', self.assignment_url)
         r = requests.post(f'{self.api_base_path}/update-score.php', \
             headers = {
                 'Authorization': 'Bearer ' + self.token
@@ -183,6 +202,8 @@ class AssignmentService:
 
     def evaluate_all(self, update=False, overwrite=False):
         n = self.get_number_of_questions()
+        if n == 0:
+            return {self.assignment_url: {}}
         results = defaultdict(lambda: [0] * n)
         answers = self.get_all_answers()
         for answer in answers:
@@ -203,6 +224,7 @@ class AssignmentService:
 def main():
     sub = SubmissaoService(API_BASE_PATH)
     sub.login(USERNAME, PASSWORD)
+    # time.sleep(5)
     print(sub.evaluate_all(update=True, overwrite=False))
 
 if __name__ == '__main__':
