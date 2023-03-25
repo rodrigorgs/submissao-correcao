@@ -1,10 +1,9 @@
-import requests
+import requests # type: ignore
 import os
 import re
 import io
-import subprocess
 import docker
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup # type: ignore
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
