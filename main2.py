@@ -98,7 +98,6 @@ class ScriptRunner:
         self.container.remove(force=True)
 
     def run(self, code, input=''):
-        print('Running code...')
         if not os.path.exists('app'):
             os.makedirs('app')
         with open('app/script.py', 'w') as f:
@@ -132,7 +131,6 @@ print = __print
     def evaluate_with_testcases(self, answer, tests):
         cases = [c.split(']]]') for c in tests.strip().split('=====') if c.strip() != '']        
         cases = [(c[0].strip(), c[1].strip()) for c in cases]
-        print('cases', cases)
         success_count = 0
         for test_in, test_out in cases:
             exit_code, output = self.script_runner.run(answer, test_in)
@@ -172,6 +170,7 @@ def main():
     service = AssignmentService()
     runner = TestRunner()
     api = EzAPI(API_BASE_PATH)
+    SUBMISSION_BATCH_SIZE = 30
     
     api.login(USERNAME, PASSWORD)
     submissions_to_update = []
@@ -185,15 +184,17 @@ def main():
                 score = 0
                 success = None
                 if tests['type'] == 'testcases':
-                    print('testcases')
                     success = runner.evaluate_with_testcases(answer, tests['contents'])
                 elif tests['type'] == 'testcode':
-                    print('testcode')
                     success = runner.evaluate_with_testcode(answer, tests['contents'])
                 if success:
                     score = 1
                 print('score:', score)
-                submissions_to_update.append({ 'id': submission['id'], 'score': score })                
+                submissions_to_update.append({ 'id': submission['id'], 'score': score })
+                if len(submissions_to_update) >= SUBMISSION_BATCH_SIZE:
+                    print('Updating score...')
+                    api.update_score(submissions_to_update)
+                    submissions_to_update = []
     
     print('Updating score...')
     api.update_score(submissions_to_update)
