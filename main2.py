@@ -59,6 +59,13 @@ class ScriptRunner:
         self.timeout_seconds = timeout_seconds
         container_name = 'ezsubmission-python'
         client = docker.from_env()
+
+        try:
+            client.ping()
+        except docker.errors.APIError as e:
+            print(f"Error connecting to Docker daemon: {e}")
+            exit(1)
+
         container = None
         try:
             container = client.containers.get(container_name)
@@ -72,6 +79,7 @@ class ScriptRunner:
 
         if container is None:
             print('Creating container...')
+
             container = client.containers.create(
                 image='python:3.10-alpine',
                 name=container_name,
