@@ -123,6 +123,8 @@ print = __print
 
     def evaluate_with_testcases(self, answer, tests):
         cases = [c.split(']]]') for c in tests.strip().split('=====') if c.strip() != '']        
+        cases = [(c[0].strip(), c[1].strip()) for c in cases]
+        print('cases', cases)
         success_count = 0
         for test_in, test_out in cases:
             exit_code, output = self.script_runner.run(answer, test_in)
