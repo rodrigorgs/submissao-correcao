@@ -3,6 +3,7 @@ import os
 import re
 import io
 import docker
+from datetime import datetime
 from bs4 import BeautifulSoup # type: ignore
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
@@ -125,7 +126,7 @@ print = __print; input = __input
 '''
         exit_code, output = self.script_runner.run(full_source)
         success = output.strip() == '' or re.match('^[.]+$', output.split('\n')[0])
-        return success
+        return {"success": success, "output": output}
 
     def evaluate_with_testcases(self, answer, tests):
         cases = [c.split(']]]') for c in tests.strip().split('=====') if c.strip() != '']        
@@ -135,7 +136,9 @@ print = __print; input = __input
             exit_code, output = self.script_runner.run(answer, test_in)
             if output.strip() == test_out.strip():
                 success_count += 1
-        return success_count == len(cases)
+        success = success_count == len(cases)
+        output = f'{success_count}/{len(cases)}'
+        return {"success": success, "output": output}
 
 class AssignmentService:
     def __init__(self):
@@ -170,7 +173,8 @@ def main():
     runner = TestRunner()
     api = EzAPI(API_BASE_PATH)
     SUBMISSION_BATCH_SIZE = 30
-    
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S %z')
+
     api.login(USERNAME, PASSWORD)
     submissions_to_update = []
     assignments = api.get_assignments_with_answers(CLASSROOM_ID)
@@ -181,15 +185,19 @@ def main():
                 answer = submission['answer']
                 tests = service.get_assignment(assignment['assignment_url']).get_test_for_question(submission['question_index'])
                 score = 0
-                success = None
+                test_results = None
                 if tests['type'] == 'testcases':
-                    success = runner.evaluate_with_testcases(answer, tests['contents'])
+                    test_results = runner.evaluate_with_testcases(answer, tests['contents'])
                 elif tests['type'] == 'testcode':
-                    success = runner.evaluate_with_testcode(answer, tests['contents'])
-                if success:
+                    test_results = runner.evaluate_with_testcode(answer, tests['contents'])
+                if test_results['success']:
                     score = 1
                 print('score:', score)
-                submissions_to_update.append({ 'id': submission['id'], 'score': score })
+                submissions_to_update.append({
+                    'id': submission['id'],
+                    'score': score,
+                    'score_timestamp': now,
+                    'score_output': test_results['output']})
                 if len(submissions_to_update) >= SUBMISSION_BATCH_SIZE:
                     print('Updating score...')
                     api.update_score(submissions_to_update)
