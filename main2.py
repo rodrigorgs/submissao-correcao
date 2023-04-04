@@ -39,7 +39,7 @@ class EzAPI:
             raise Exception("Error on authentication")
     
     def get_assignments_with_answers(self, classroom_id):
-        r = self.session.get(f'classrooms/{classroom_id}/submissions')
+        r = self.session.get(f'classrooms/{classroom_id}/submissions/latest')
         if (r.status_code == 200):
             return r.json()
         else:
@@ -118,10 +118,9 @@ class TestRunner:
 
     def evaluate_with_testcode(self, answer, tests):
         full_source = f'''
-__print = print
-print = lambda *args, **kwargs: None
+__print = print; print = lambda *args, **kwargs: None; __input = input; input = lambda *args, **kwargs: "3";
 {answer}
-print = __print
+print = __print; input = __input
 {tests}
 '''
         exit_code, output = self.script_runner.run(full_source)
