@@ -129,8 +129,11 @@ print = __print; input = __input
         return {"success": success, "output": output}
 
     def evaluate_with_testcases(self, answer, tests):
+        def transform(s):
+            return s.replace('\\n', '\n').strip()
+        
         cases = [c.split(']]]') for c in tests.strip().split('=====') if c.strip() != '']        
-        cases = [(c[0].strip(), c[1].strip()) for c in cases]
+        cases = [(transform(c[0]), transform(c[1])) for c in cases]
         success_count = 0
         for test_in, test_out in cases:
             exit_code, output = self.script_runner.run(answer, test_in)
