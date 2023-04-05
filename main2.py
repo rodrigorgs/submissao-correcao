@@ -209,8 +209,8 @@ def main():
                         api.update_score(submissions_to_update)
                         submissions_to_update = []
     
-    print('Updating score...')
-    api.update_score(submissions_to_update)
+        print('Updating score...')
+        api.update_score(submissions_to_update)
 
 if __name__ == '__main__':
     main()
