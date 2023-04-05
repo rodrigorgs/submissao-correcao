@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup # type: ignore
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
+# comma-separated list of ids
 CLASSROOM_ID = os.getenv('CLASSROOM_ID')
 
 class EzSession(requests.Session):
@@ -179,32 +180,34 @@ def main():
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S %z')
 
     api.login(USERNAME, PASSWORD)
-    submissions_to_update = []
-    assignments = api.get_assignments_with_answers(CLASSROOM_ID)
-    for assignment in assignments:
-        for submission in assignment['submissions']:
-            if (submission['score'] is None):
-                print('Evaluating submission', submission['id'], 'with question index', submission['question_index'], '... ', end='')
-                answer = submission['answer']
-                tests = service.get_assignment(assignment['assignment_url']).get_test_for_question(submission['question_index'])
-                score = 0
-                test_results = None
-                if tests['type'] == 'testcases':
-                    test_results = runner.evaluate_with_testcases(answer, tests['contents'])
-                elif tests['type'] == 'testcode':
-                    test_results = runner.evaluate_with_testcode(answer, tests['contents'])
-                if test_results['success']:
-                    score = 1
-                print('score:', score)
-                submissions_to_update.append({
-                    'id': submission['id'],
-                    'score': score,
-                    'score_timestamp': now,
-                    'score_output': test_results['output']})
-                if len(submissions_to_update) >= SUBMISSION_BATCH_SIZE:
-                    print('Updating score...')
-                    api.update_score(submissions_to_update)
-                    submissions_to_update = []
+    for classroom_id in CLASSROOM_ID.split(','):
+        print(f'Evaluating classroom {classroom_id}...')
+        submissions_to_update = []
+        assignments = api.get_assignments_with_answers(classroom_id)
+        for assignment in assignments:
+            for submission in assignment['submissions']:
+                if (submission['score'] is None):
+                    print('Evaluating submission', submission['id'], 'with question index', submission['question_index'], '... ', end='')
+                    answer = submission['answer']
+                    tests = service.get_assignment(assignment['assignment_url']).get_test_for_question(submission['question_index'])
+                    score = 0
+                    test_results = None
+                    if tests['type'] == 'testcases':
+                        test_results = runner.evaluate_with_testcases(answer, tests['contents'])
+                    elif tests['type'] == 'testcode':
+                        test_results = runner.evaluate_with_testcode(answer, tests['contents'])
+                    if test_results['success']:
+                        score = 1
+                    print('score:', score)
+                    submissions_to_update.append({
+                        'id': submission['id'],
+                        'score': score,
+                        'score_timestamp': now,
+                        'score_output': test_results['output']})
+                    if len(submissions_to_update) >= SUBMISSION_BATCH_SIZE:
+                        print('Updating score...')
+                        api.update_score(submissions_to_update)
+                        submissions_to_update = []
     
     print('Updating score...')
     api.update_score(submissions_to_update)
