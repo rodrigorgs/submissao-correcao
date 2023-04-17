@@ -76,9 +76,11 @@ class ScriptRunner:
                 if container.status == "running":
                     container.stop()
                 container.remove()
+                container = None
         except docker.errors.NotFound:
             pass
 
+        print('container', container)
         if container is None:
             print('Creating container...')
 
