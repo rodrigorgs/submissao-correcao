@@ -11,6 +11,7 @@ USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
 # comma-separated list of ids
 CLASSROOM_ID = os.getenv('CLASSROOM_ID')
+RETEST_WRONG = bool(os.getenv('RETEST_WRONG', False))
 
 class EzSession(requests.Session):
     def __init__(self, base_url):
@@ -121,12 +122,14 @@ class TestRunner:
         self.script_runner = ScriptRunner()
 
     def evaluate_with_testcode(self, answer, tests):
-        full_source = f'''
-__print = print; print = lambda *args, **kwargs: None; __input = input; input = lambda *args, **kwargs: "3";
-{answer}
-print = __print; input = __input
-{tests}
-'''
+        if '[[[code]]]' not in tests:
+            tests = '[[[header]]]\n[[[code]]]\n[[[footer]]]' + tests;
+        
+        full_source = tests \
+          .replace('[[[header]]]', '__print = print; print = lambda *args, **kwargs: None; __input = input; input = lambda *args, **kwargs: "3";') \
+          .replace('[[[footer]]]', '\nprint = __print; input = __input\n') \
+          .replace('[[[code]]]',  answer);
+
         exit_code, output = self.script_runner.run(full_source)
         success = output.strip() == '' or re.match('^[.]+$', output.split('\n')[0])
         return {"success": success, "output": output}
@@ -155,24 +158,52 @@ class AssignmentService:
             self.assignments[assignment_url] = Assignment(assignment_url)
         return self.assignments[assignment_url]
 
+def remove_elements_starting_from_element(lst, elem):
+    index_of_elem = lst.index(elem) if elem in lst else -1
+    if index_of_elem != -1:
+        return lst[:index_of_elem]
+    else:
+        return lst
+
+def next_until(soup, from_elem, until_selector):
+    selected_elements = soup.select(until_selector)
+    ret = []
+    all_siblings = from_elem.find_next_siblings()
+    for elem in all_siblings:
+        if elem in selected_elements:
+            break
+        ret.append(elem)
+    return ret
+
 class Assignment:
     def __init__(self, assignment_url):
         self.assignment_url = assignment_url
-        self.load_tests()
+        self.load_extras()
 
-    def load_tests(self):
-        ret = []
+    def load_extras(self):
+        extras = []
+
         r = requests.get(self.assignment_url)
         soup = BeautifulSoup(r.content, 'html5lib')
-        for test in soup.select('.testcases, .testcode'):
-            ret.append({
-                'contents': test.contents[0],
-                'type': test['class'][0]
-            })
-        self.tests = ret
+        
+        for code_elem in soup.select('.code'):
+            question_extra = {}
+            siblings = next_until(soup, code_elem, 'h2')
+            for elem in siblings:
+                class_name = ''
+                if elem.has_attr('class') and len(elem['class']) > 0:
+                    class_name = elem['class'][0]
+                if class_name in ['testcases', 'testcode', 'runtemplate']:
+                    question_extra[class_name] = {
+                        'contents': elem.contents[0],
+                        'type': class_name
+                    }
+            extras.append(question_extra)
+        
+        self.extras = extras
 
-    def get_test_for_question(self, question_index):
-        return self.tests[question_index]
+    def get_extras_for_question(self, question_index):
+        return self.extras[question_index]
 
 def main():
     service = AssignmentService()
@@ -188,16 +219,22 @@ def main():
         assignments = api.get_assignments_with_answers(classroom_id)
         for assignment in assignments:
             for submission in assignment['submissions']:
-                if (submission['score'] is None):
+                if (submission['score'] is None) or (RETEST_WRONG and (submission['score'] < '1.000' or submission['score'] == '0.000')):
                     print('Evaluating submission', submission['id'], 'with question index', submission['question_index'], '... ', end='')
                     answer = submission['answer']
-                    tests = service.get_assignment(assignment['assignment_url']).get_test_for_question(submission['question_index'])
-                    score = 0
+                    extras = service.get_assignment(assignment['assignment_url']).get_extras_for_question(submission['question_index'])
                     test_results = None
-                    if tests['type'] == 'testcases':
-                        test_results = runner.evaluate_with_testcases(answer, tests['contents'])
-                    elif tests['type'] == 'testcode':
-                        test_results = runner.evaluate_with_testcode(answer, tests['contents'])
+                    # use runtemplate if available
+                    # if 'runtemplate' in extras:
+                    #     answer = extras['runtemplate']['contents'].replace('[[[code]]]', answer);
+
+                    score = 0
+                    if 'testcases' in extras:
+                        test_results = runner.evaluate_with_testcases(answer, extras['testcases']['contents'])
+                    elif 'testcode' in extras:
+                        test_results = runner.evaluate_with_testcode(answer, extras['testcode']['contents'])
+                    else:
+                        test_results = {'success': False, 'output': ''}
                     if test_results['success']:
                         score = 1
                     print('score:', score)
