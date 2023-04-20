@@ -11,7 +11,7 @@ USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
 # comma-separated list of ids
 CLASSROOM_ID = os.getenv('CLASSROOM_ID')
-RETEST_WRONG = bool(os.getenv('RETEST_WRONG', False))
+RETEST_WRONG = os.getenv('RETEST_WRONG', 'False') in ('True', 'true')
 
 class EzSession(requests.Session):
     def __init__(self, base_url):
@@ -72,7 +72,10 @@ class ScriptRunner:
         container = None
         try:
             container = client.containers.get(container_name)
-            if not reuse_container:
+            if reuse_container:
+                if container.status != "running":
+                    container.start()
+            else:
                 print('Removing existing container...')
                 if container.status == "running":
                     container.stop()
