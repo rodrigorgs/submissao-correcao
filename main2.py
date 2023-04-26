@@ -98,7 +98,10 @@ class ScriptRunner:
             container.start()
             print('Done')
         else:
-            print('Reusing existing container...')
+            print(f'Reusing existing container (status = {container.status})...')
+            # if container is not
+            if container.status == "stopped":
+                container.start()
         self.container = container
 
     def stop(self):
