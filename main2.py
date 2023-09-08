@@ -111,6 +111,8 @@ class ScriptRunner:
     def run(self, code, input=''):
         if not os.path.exists('app'):
             os.makedirs('app')
+        with open('app/tupy.py', 'w') as f:
+            f.write('')
         with open('app/script.py', 'w') as f:
             f.write(code)
         with open('app/input.txt', 'w') as f:
