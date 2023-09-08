@@ -5,6 +5,8 @@ import io
 import docker
 from datetime import datetime
 from bs4 import BeautifulSoup # type: ignore
+import tempfile
+import subprocess
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
@@ -125,9 +127,9 @@ class ScriptRunner:
         
         return (res.exit_code, output.getvalue())
 
-class TestRunner:
-    def __init__(self):
-        self.script_runner = ScriptRunner()
+class PythonTestRunner:
+    def __init__(self, script_runner):
+        self.script_runner = script_runner
 
     def evaluate_with_testcode(self, answer, tests):
         if '[[[code]]]' not in tests:
@@ -156,6 +158,57 @@ class TestRunner:
         success = success_count == len(cases)
         output = f'{success_count}/{len(cases)}'
         return {"success": success, "output": output}
+
+# TODO: run in a container
+class FlutterRunner:
+    def evaluate_with_testcode(self, answer, tests):
+        # Create a file in a temp dir
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            os.mkdir(tmpdirname + '/lib')
+            os.mkdir(tmpdirname + '/test')
+            with open(tmpdirname + '/lib/alomundo.dart', 'w') as f:
+                f.write(answer)
+            with open(tmpdirname + '/test/alomundo_test.dart', 'w') as f:
+                f.write(tests)
+            with open(tmpdirname + '/pubspec.yaml', 'w') as f:
+                f.write('''
+name: flutter_aulas
+description: A new Flutter project.
+publish_to: 'none'
+version: 1.0.0+1
+environment:
+  sdk: '>=2.19.6 <3.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod:
+  riverpod:
+  cupertino_icons: ^1.0.2
+  faker: ^2.1.0
+  shared_preferences: ^2.2.0
+  localstorage: ^4.0.1+4
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  riverpod_lint:
+  custom_lint:
+  flutter_lints: ^2.0.0
+flutter:
+  uses-material-design: true
+''')
+            
+            # Run flutter test
+            try:
+                output = subprocess.check_output(f'cd {tmpdirname} && flutter test', shell=True, stderr=subprocess.STDOUT).decode()
+            except subprocess.CalledProcessError as e:
+                output = e.output.decode()
+
+            #exit_code, output = self.script_runner.run(f'cd {tmpdirname} && flutter test')
+        
+            # success should be true if output contains 'All tests passed!'
+            success = 'All tests passed!' in output
+            return {"output": output, "success": success}
+
 
 class AssignmentService:
     def __init__(self):
@@ -196,16 +249,20 @@ class Assignment:
         
         for code_elem in soup.select('.code'):
             question_extra = {}
+            # Get code language
+            for class_name in code_elem['class']:
+                if match := re.match('lang-(.*?)$', class_name):
+                    question_extra['lang'] = match.group(1)
             siblings = next_until(soup, code_elem, 'h2')
             for elem in siblings:
                 class_name = ''
                 if elem.has_attr('class') and len(elem['class']) > 0:
-                    class_name = elem['class'][0]
-                if class_name in ['testcases', 'testcode', 'runtemplate']:
-                    question_extra[class_name] = {
-                        'contents': elem.contents[0],
-                        'type': class_name
-                    }
+                    for class_name in elem['class']:
+                        if class_name in ['testcases', 'testcode', 'runtemplate']:
+                            question_extra[class_name] = {
+                                'contents': elem.contents[0],
+                                'type': class_name
+                            }
             extras.append(question_extra)
         
         self.extras = extras
@@ -215,7 +272,7 @@ class Assignment:
 
 def main():
     service = AssignmentService()
-    runner = TestRunner()
+    python_script_runner = ScriptRunner()
     api = EzAPI(API_BASE_PATH)
     SUBMISSION_BATCH_SIZE = 30
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S %z')
@@ -236,6 +293,11 @@ def main():
                     # if 'runtemplate' in extras:
                     #     answer = extras['runtemplate']['contents'].replace('[[[code]]]', answer);
 
+                    if 'lang' in extras and extras['lang'] == 'flutter':
+                        runner = FlutterRunner()
+                    else:
+                        runner = PythonTestRunner(python_script_runner)
+                    
                     score = 0
                     if 'testcases' in extras:
                         test_results = runner.evaluate_with_testcases(answer, extras['testcases']['contents'])
