@@ -168,6 +168,7 @@ class FlutterRunner:
         full_path = extras['filename']
         project_dir = os.path.dirname(os.path.dirname(full_path))
         script_name = os.path.basename(full_path)
+        pkg_name = project_dir
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             print(f'*** {tmpdirname}/{project_dir}/lib/{script_name}')
@@ -179,8 +180,9 @@ class FlutterRunner:
             with open(f'{tmpdirname}/{project_dir}/test/{script_name.replace(".dart", "_test.dart")}', 'w') as f:
                 f.write(tests)
             with open(f'{tmpdirname}/{project_dir}/pubspec.yaml', 'w') as f:
-                f.write('''
-name: flutter_aulas
+                if extras['lang'] == 'flutter':
+                    f.write(f'''
+name: {pkg_name}
 description: A new Flutter project.
 publish_to: 'none'
 version: 1.0.0+1
@@ -204,10 +206,22 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 ''')
+                else:
+                    f.write(f'''
+name: {pkg_name}
+version: 1.0.0
+environment:
+  sdk: '>=2.19.6 <3.0.0'
+dev_dependencies:
+  lints: ^2.0.0
+  test: ^1.21.0
+                            ''')
             
-            # Run flutter test
+            # Run dart/flutter test
+            dart_or_flutter_cmd = 'flutter' if extras['lang'] == 'flutter' else 'dart'
+            print(f'Dart or flutter: {dart_or_flutter_cmd}')
             try:
-                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && flutter test', shell=True, stderr=subprocess.STDOUT).decode()
+                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && {dart_or_flutter_cmd} test', shell=True, stderr=subprocess.STDOUT).decode()
             except subprocess.CalledProcessError as e:
                 output = e.output.decode()
 
@@ -304,7 +318,7 @@ def main():
                     # if 'runtemplate' in extras:
                     #     answer = extras['runtemplate']['contents'].replace('[[[code]]]', answer);
 
-                    if 'lang' in extras and extras['lang'] == 'flutter':
+                    if 'lang' in extras and extras['lang'] in ('flutter', 'dart'):
                         runner = FlutterRunner()
                     else:
                         runner = PythonTestRunner(python_script_runner)
