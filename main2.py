@@ -131,7 +131,7 @@ class PythonTestRunner:
     def __init__(self, script_runner):
         self.script_runner = script_runner
 
-    def evaluate_with_testcode(self, answer, tests):
+    def evaluate_with_testcode(self, answer, tests, extras):
         if '[[[code]]]' not in tests:
             tests = '[[[header]]]\n[[[code]]]\n[[[footer]]]' + tests;
         
@@ -144,7 +144,7 @@ class PythonTestRunner:
         success = output.strip() == '' or re.match('^[.]+$', output.split('\n')[0])
         return {"success": success, "output": output}
 
-    def evaluate_with_testcases(self, answer, tests):
+    def evaluate_with_testcases(self, answer, tests, extras):
         def transform(s):
             return s.replace('\\n', '\n').strip()
         
@@ -161,16 +161,24 @@ class PythonTestRunner:
 
 # TODO: run in a container
 class FlutterRunner:
-    def evaluate_with_testcode(self, answer, tests):
-        # Create a file in a temp dir
+    def evaluate_with_testcode(self, answer, tests, extras):
+        if 'filename' not in extras:
+            raise Exception('Filename not specified using the data-filename HTML attribute.')
+        
+        full_path = extras['filename']
+        project_dir = os.path.dirname(os.path.dirname(full_path))
+        script_name = os.path.basename(full_path)
+
         with tempfile.TemporaryDirectory() as tmpdirname:
-            os.mkdir(tmpdirname + '/lib')
-            os.mkdir(tmpdirname + '/test')
-            with open(tmpdirname + '/lib/alomundo.dart', 'w') as f:
+            print(f'*** {tmpdirname}/{project_dir}/lib/{script_name}')
+            os.makedirs(f'{tmpdirname}/{project_dir}/lib', exist_ok=True)
+            os.makedirs(f'{tmpdirname}/{project_dir}/test', exist_ok=True)
+
+            with open(f'{tmpdirname}/{project_dir}/lib/{script_name}', 'w') as f:
                 f.write(answer)
-            with open(tmpdirname + '/test/alomundo_test.dart', 'w') as f:
+            with open(f'{tmpdirname}/{project_dir}/test/{script_name.replace(".dart", "_test.dart")}', 'w') as f:
                 f.write(tests)
-            with open(tmpdirname + '/pubspec.yaml', 'w') as f:
+            with open(f'{tmpdirname}/{project_dir}/pubspec.yaml', 'w') as f:
                 f.write('''
 name: flutter_aulas
 description: A new Flutter project.
@@ -199,7 +207,7 @@ flutter:
             
             # Run flutter test
             try:
-                output = subprocess.check_output(f'cd {tmpdirname} && flutter test', shell=True, stderr=subprocess.STDOUT).decode()
+                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && flutter test', shell=True, stderr=subprocess.STDOUT).decode()
             except subprocess.CalledProcessError as e:
                 output = e.output.decode()
 
@@ -253,6 +261,9 @@ class Assignment:
             for class_name in code_elem['class']:
                 if match := re.match('lang-(.*?)$', class_name):
                     question_extra['lang'] = match.group(1)
+            # Get filename from data-filename
+            if code_elem.has_attr('data-filename'):
+                question_extra['filename'] = code_elem['data-filename']
             siblings = next_until(soup, code_elem, 'h2')
             for elem in siblings:
                 class_name = ''
@@ -300,9 +311,9 @@ def main():
                     
                     score = 0
                     if 'testcases' in extras:
-                        test_results = runner.evaluate_with_testcases(answer, extras['testcases']['contents'])
+                        test_results = runner.evaluate_with_testcases(answer, extras['testcases']['contents'], extras)
                     elif 'testcode' in extras:
-                        test_results = runner.evaluate_with_testcode(answer, extras['testcode']['contents'])
+                        test_results = runner.evaluate_with_testcode(answer, extras['testcode']['contents'], extras)
                     else:
                         test_results = {'success': False, 'output': ''}
                     if test_results['success']:
