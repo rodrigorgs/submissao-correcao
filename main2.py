@@ -171,52 +171,14 @@ class FlutterRunner:
         pkg_name = project_dir
 
         with tempfile.TemporaryDirectory() as tmpdirname:
-            print(f'*** {tmpdirname}/{project_dir}/lib/{script_name}')
-            os.makedirs(f'{tmpdirname}/{project_dir}/lib', exist_ok=True)
-            os.makedirs(f'{tmpdirname}/{project_dir}/test', exist_ok=True)
+            # copy files and folders in template/flutter_aulas to tmpdirname
+            os.system(f'cp -r template/flutter_aulas {tmpdirname}/{project_dir}')
 
             with open(f'{tmpdirname}/{project_dir}/lib/{script_name}', 'w') as f:
                 f.write(answer)
             with open(f'{tmpdirname}/{project_dir}/test/{script_name.replace(".dart", "_test.dart")}', 'w') as f:
                 f.write(tests)
-            with open(f'{tmpdirname}/{project_dir}/pubspec.yaml', 'w') as f:
-                if extras['lang'] == 'flutter':
-                    f.write(f'''
-name: {pkg_name}
-description: A new Flutter project.
-publish_to: 'none'
-version: 1.0.0+1
-environment:
-  sdk: '>=2.19.6 <3.0.0'
-dependencies:
-  flutter:
-    sdk: flutter
-  flutter_riverpod:
-  riverpod:
-  cupertino_icons: ^1.0.2
-  faker: ^2.1.0
-  shared_preferences: ^2.2.0
-  localstorage: ^4.0.1+4
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  riverpod_lint:
-  custom_lint:
-  flutter_lints: ^2.0.0
-flutter:
-  uses-material-design: true
-''')
-                else:
-                    f.write(f'''
-name: {pkg_name}
-version: 1.0.0
-environment:
-  sdk: '>=2.19.6 <3.0.0'
-dev_dependencies:
-  lints: ^2.0.0
-  test: ^1.21.0
-                            ''')
-            
+
             # Run dart/flutter test
             dart_or_flutter_cmd = 'flutter' if extras['lang'] == 'flutter' else 'dart'
             print(f'Dart or flutter: {dart_or_flutter_cmd}')
