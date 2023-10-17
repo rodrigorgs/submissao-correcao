@@ -185,7 +185,7 @@ class BlocompRunner:
         else:
             return {"success": False, "output": "test"}
     
-    def evaluate_cleaning_robot_code(self, code):
+    def transform_code(self, code):
         full_code = f''
         
         with open('template/cleaning_robot.js', 'r') as f:
@@ -201,6 +201,9 @@ class BlocompRunner:
         full_code += code
 
         full_code += 'console.log(JSON.stringify(r.outcome()))'
+
+    def evaluate_cleaning_robot_code(self, code):
+        full_code = self.transform_code(code)
 
         tmpdirname = tempfile.mkdtemp() 
         print(tmpdirname)
