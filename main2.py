@@ -206,9 +206,7 @@ class BlocompRunner:
 const readline = require('readline');
 
 function prompt(message) {
-  if (message == undefined) {
-    message = '';
-  }
+  message = '';
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
