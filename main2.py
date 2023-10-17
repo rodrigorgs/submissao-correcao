@@ -7,6 +7,8 @@ from datetime import datetime
 from bs4 import BeautifulSoup # type: ignore
 import tempfile
 import subprocess
+import json
+import subprocess
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
@@ -159,6 +161,76 @@ class PythonTestRunner:
         output = f'{success_count}/{len(cases)}'
         return {"success": success, "output": output}
 
+class BlocompRunner:
+    TIMEOUT_SECONDS = 2
+
+    def __init__(self, assignment_url):
+        self.assignment_url = assignment_url
+        self.problem = self.load_problem()
+
+    def load_problem(self):
+        if m := re.match(r'.*[?]p=(.+)', self.assignment_url):
+            problem_id = m.group(1)
+            problem_url = f'https://rodrigorgs.github.io/blocomp/problems/{problem_id}.json'
+            response = requests.get(problem_url)
+            response.raise_for_status()
+            return response.json()
+        else:
+            raise Exception('Could not find problem id in assignment URL')
+
+    def evaluate(self, answer):
+        code = json.loads(answer)["code"]["javascript"]
+        if self.problem['stage']['type'] == 'cleaning':
+            return self.evaluate_cleaning_robot_code(code)
+        else:
+            return {"success": False, "output": "test"}
+    
+    def evaluate_cleaning_robot_code(self, code):
+        full_code = f''
+        
+        with open('template/cleaning_robot.js', 'r') as f:
+            full_code = f.read()
+        
+        data_json = json.dumps(self.problem['stage']['data'])
+        full_code += f'\nr = new CleaningModel({data_json})\n'
+        
+        code = code.replace('await window.stageManager', 'r')
+        code = code.replace('window.stageManager', 'r')
+        code = '\n'.join(['// ' + line if line.strip().startswith('await') else line for line in code.split('\n')])
+        
+        full_code += code
+
+        full_code += 'console.log(JSON.stringify(r.outcome()))'
+
+        tmpdirname = tempfile.mkdtemp() 
+        print(tmpdirname)
+        tmpfilename = os.path.join(tmpdirname, 'code.js')
+        with open(tmpfilename, 'w') as f:
+            f.write(full_code)
+        
+        output = ''
+        try:
+            process = subprocess.Popen(['node', tmpfilename], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+            try:
+                output, _ = process.communicate(timeout=BlocompRunner.TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                output, _ = process.communicate()
+
+            output = output.decode()
+
+            result = json.loads(output)
+            return {"success": result['successful'], "output": output}
+        except Exception as e:
+            print(e)
+            print(output)
+            return {"success": False, "output": str(e)}
+
+        
+        
+
+
 # TODO: run in a container
 class FlutterRunner:
     def evaluate_with_testcode(self, answer, tests, extras):
@@ -282,6 +354,8 @@ def main():
 
                     if 'lang' in extras and extras['lang'] in ('flutter', 'dart'):
                         runner = FlutterRunner()
+                    elif 'lang' in extras and extras['lang'] == 'blocomp':
+                        runner = BlocompRunner(assignment['assignment_url'])
                     else:
                         runner = PythonTestRunner(python_script_runner)
                     
@@ -291,7 +365,7 @@ def main():
                     elif 'testcode' in extras:
                         test_results = runner.evaluate_with_testcode(answer, extras['testcode']['contents'], extras)
                     else:
-                        test_results = {'success': False, 'output': ''}
+                        test_results = runner.evaluate(answer)
                     if test_results['success']:
                         score = 1
                     print('score:', score)
