@@ -1,3 +1,5 @@
 env*.sh
 venv
 app/
+node_modules
+__pycache__

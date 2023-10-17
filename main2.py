@@ -9,6 +9,7 @@ import tempfile
 import subprocess
 import json
 import subprocess
+import traceback
 
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
@@ -179,28 +180,115 @@ class BlocompRunner:
             raise Exception('Could not find problem id in assignment URL')
 
     def evaluate(self, answer):
-        code = json.loads(answer)["code"]["javascript"]
+        # code = json.loads(answer)["code"]["javascript"]
         if self.problem['stage']['type'] == 'cleaning':
-            return self.evaluate_cleaning_robot_code(code)
+            if not 'testCases' in self.problem["problem"]:
+                self.problem["problem"]["testCases"] = [{"input": ""}]
+            
+            total = len(self.problem["problem"]["testCases"])
+            correct = 0
+            output = ''
+            for test_case in self.problem["problem"]["testCases"]:
+                result = self.evaluate_robot_with_testcase(answer, test_case)
+                if result is not None and 'output' in result:
+                    output += str(result["output"])
+                if result is not None and 'success' in result and result["success"]:
+                    correct += 1
+                else:
+                    break
+            return {"success": correct == total, "output": output}
+            # return self.evaluate_cleaning_robot_code(code)
         else:
             return {"success": False, "output": "test"}
     
-    def transform_code(self, code):
-        full_code = f''
-        
+    def transform_code(self, code, data=None):
+        full_code = '''
+const readline = require('readline');
+
+function prompt(message) {
+  if (message == undefined) {
+    message = '';
+  }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question(message, (input) => {
+      rl.close();
+      resolve(input);
+    });
+  });
+}
+'''   
         with open('template/cleaning_robot.js', 'r') as f:
-            full_code = f.read()
+            full_code += f.read()
         
-        data_json = json.dumps(self.problem['stage']['data'])
+        if data is None:
+            data = self.problem['stage']['data']
+        data_json = json.dumps(data)
+        
+        full_code += 'async function main() {\n'
         full_code += f'\nr = new CleaningModel({data_json})\n'
         
+        code = code.replace('prompt(', 'await prompt(')
         code = code.replace('await window.stageManager', 'r')
         code = code.replace('window.stageManager', 'r')
+        code = code.replace('window.chatManager', '// window.chatManager')
         code = '\n'.join(['// ' + line if line.strip().startswith('await') else line for line in code.split('\n')])
         
         full_code += code
 
-        full_code += 'console.log(JSON.stringify(r.outcome()))'
+        full_code += 'console.log("\\n");'
+        full_code += 'console.log(JSON.stringify(r.outcome()));'
+
+        full_code += '\n} \n main();'
+
+        return full_code
+
+    def evaluate_robot_with_testcase(self, answer, testcase):
+        code = json.loads(answer)["code"]["javascript"]
+        if 'input' in testcase:
+            input_string = testcase['input']
+        else:
+            input_string = ''
+        input_string += "\n"
+        if 'data' in testcase:
+            data = testcase['data']
+        else:
+            data = self.problem['stage']['data']
+
+        full_code = self.transform_code(code, data)
+
+        tmpdirname = tempfile.mkdtemp() 
+        print(tmpdirname)
+        tmpfilename = os.path.join(tmpdirname, 'code.js')
+        with open(tmpfilename, 'w') as f:
+            f.write(full_code)
+        
+        output = ''
+        try:
+            env = os.environ.copy()
+            cwd = os.path.dirname(__file__)
+            env['NODE_PATH'] = os.path.join(cwd, 'node_modules') + ':' + env.get('NODE_PATH', '')
+            process = subprocess.Popen(['node', tmpfilename], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, cwd=cwd)
+
+            try:
+                process.stdin.write(input_string.encode())
+                output, _ = process.communicate(input=input_string.encode(), timeout=BlocompRunner.TIMEOUT_SECONDS)
+
+                json_string = output.decode().strip().split("\n")[-1]
+                result = json.loads(json_string)
+                return {"success": result['successful'], "output": output}
+            except subprocess.TimeoutExpired:
+                process.kill()
+                output, _ = process.communicate()
+            
+        except Exception as e:
+            print(traceback.format_exc())
+            print('json_string:', json_string)
+            return {"success": False, "output": str(e)}
 
     def evaluate_cleaning_robot_code(self, code):
         full_code = self.transform_code(code)
@@ -213,7 +301,10 @@ class BlocompRunner:
         
         output = ''
         try:
-            process = subprocess.Popen(['node', tmpfilename], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            env = os.environ.copy()
+            cwd = os.path.dirname(__file__)
+            env['NODE_PATH'] = os.path.join(cwd, 'node_modules') + ':' + env.get('NODE_PATH', '')
+            process = subprocess.Popen(['node', tmpfilename], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, cwd=cwd)
 
             try:
                 output, _ = process.communicate(timeout=BlocompRunner.TIMEOUT_SECONDS)
@@ -382,7 +473,6 @@ def main():
                         api.update_score(submissions_to_update)
                         submissions_to_update = []
     
-        print('Updating score...')
         api.update_score(submissions_to_update)
 
 if __name__ == '__main__':
