@@ -168,6 +168,7 @@ class BlocompRunner:
     def __init__(self, assignment_url):
         self.assignment_url = assignment_url
         self.problem = self.load_problem()
+        self.problem_type = self.problem.get('stage', {}).get('type', None)
 
     def load_problem(self):
         if m := re.match(r'.*[?]p=(.+)', self.assignment_url):
@@ -180,82 +181,74 @@ class BlocompRunner:
             raise Exception('Could not find problem id in assignment URL')
 
     def evaluate(self, answer):
-        # code = json.loads(answer)["code"]["javascript"]
-        if self.problem['stage']['type'] == 'cleaning':
-            if not 'testCases' in self.problem["problem"]:
-                self.problem["problem"]["testCases"] = [{"input": ""}]
-            
-            total = len(self.problem["problem"]["testCases"])
-            correct = 0
-            output = ''
-            for test_case in self.problem["problem"]["testCases"]:
-                result = self.evaluate_robot_with_testcase(answer, test_case)
-                if result is not None and 'output' in result:
-                    output += str(result["output"])
-                if result is not None and 'success' in result and result["success"]:
-                    correct += 1
-                else:
-                    break
-            return {"success": correct == total, "output": output}
-            # return self.evaluate_cleaning_robot_code(code)
-        else:
-            return {"success": False, "output": "test"}
+        if not 'testCases' in self.problem["problem"]:
+            self.problem["problem"]["testCases"] = [{"input": ""}]
+        
+        total = len(self.problem["problem"]["testCases"])
+        correct = 0
+        output = ''
+        for test_case in self.problem["problem"]["testCases"]:
+            result = self.evaluate_robot_with_testcase(answer, test_case)
+            if result is not None and 'output' in result:
+                output += str(result["output"])
+            if result is not None and 'success' in result and result["success"]:
+                correct += 1
+            else:
+                break
+        return {"success": correct == total, "output": output}
     
-    def transform_code(self, code, data=None):
+    def transform_code(self, code, data=None, problem_type=None):
         full_code = '''
 const readline = require('readline');
 
-function prompt(message) {
-  message = '';
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+const _readlineInterface = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+const _readlineIterator = _readlineInterface[Symbol.asyncIterator]();
 
-  return new Promise((resolve) => {
-    rl.question(message, (input) => {
-      rl.close();
-      resolve(input);
-    });
-  });
+async function prompt() {
+    return (await _readlineIterator.next()).value;
 }
+
 '''   
-        with open('template/cleaning_robot.js', 'r') as f:
-            full_code += f.read()
+        if self.problem_type == 'cleaning':
+            with open('template/cleaning_robot.js', 'r') as f:
+                full_code += f.read()
         
         if data is None:
             data = self.problem['stage']['data']
         data_json = json.dumps(data)
         
         full_code += 'async function main() {\n'
-        full_code += f'\nr = new CleaningModel({data_json})\n'
+        if self.problem_type == 'cleaning':
+            full_code += f'\n_cleaningModel = new CleaningModel({data_json})\n'
         
+        code = re.sub(r"^.*window.chatManager.addMessage.*Digite um .* para guardar como.*$", "", code, flags=re.MULTILINE)
+        code = re.sub(r"window.chatManager.addMessage[(](.+), 'received'[)];", r"console.log(\1);", code);
         code = code.replace('prompt(', 'await prompt(')
-        code = code.replace('await window.stageManager', 'r')
-        code = code.replace('window.stageManager', 'r')
+        code = code.replace('await window.stageManager', '_cleaningModel')
+        code = code.replace('window.stageManager', '_cleaningModel')
         code = code.replace('window.chatManager', '// window.chatManager')
         code = '\n'.join(['// ' + line if line.strip().startswith('await') else line for line in code.split('\n')])
         
         full_code += code
 
-        full_code += 'console.log("\\n");'
-        full_code += 'console.log(JSON.stringify(r.outcome()));'
+        if self.problem_type == 'cleaning':
+            full_code += 'console.log("\\n");'
+            full_code += 'console.log(JSON.stringify(_cleaningModel.outcome()));'
 
-        full_code += '\n} \n main();'
+        full_code += '\n_readlineInterface.close();\n} \n main();'
 
         return full_code
 
     def evaluate_robot_with_testcase(self, answer, testcase):
         code = json.loads(answer)["code"]["javascript"]
-        if 'input' in testcase:
-            input_string = testcase['input']
-        else:
-            input_string = ''
-        input_string += "\n"
+        input_string = testcase.get('input', '') + '\n'
+        
+        data = self.problem.get('stage', {}).get('data', {})
         if 'data' in testcase:
             data = testcase['data']
-        else:
-            data = self.problem['stage']['data']
 
         full_code = self.transform_code(code, data)
 
@@ -273,12 +266,16 @@ function prompt(message) {
             process = subprocess.Popen(['node', tmpfilename], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, cwd=cwd)
 
             try:
-                process.stdin.write(input_string.encode())
                 output, _ = process.communicate(input=input_string.encode(), timeout=BlocompRunner.TIMEOUT_SECONDS)
 
-                json_string = output.decode().strip().split("\n")[-1]
-                result = json.loads(json_string)
-                return {"success": result['successful'], "output": output}
+                if self.problem_type == 'cleaning':
+                    json_string = output.decode().strip().split("\n")[-1]
+                    result = json.loads(json_string)
+                    return {"success": result['successful'], "output": output}
+                else:
+                    success = output.decode().strip() == testcase.get('output', '').strip()
+                    print({"success": success, "output": output.decode()})
+                    return {"success": success, "output": output.decode()}
             except subprocess.TimeoutExpired:
                 process.kill()
                 output, _ = process.communicate()
