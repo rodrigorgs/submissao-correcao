@@ -171,9 +171,10 @@ class BlocompRunner:
         self.problem_type = self.problem.get('stage', {}).get('type', None)
 
     def load_problem(self):
-        if m := re.match(r'.*[?]p=(.+)', self.assignment_url):
-            problem_id = m.group(1)
-            problem_url = f'https://rodrigorgs.github.io/blocomp/problems/{problem_id}.json'
+        if m := re.match(r'(.*)[?]p=(.+)', self.assignment_url):
+            prefix = m.group(1)
+            problem_id = m.group(2)
+            problem_url = f'{prefix}problems/{problem_id}.json'
             response = requests.get(problem_url)
             response.raise_for_status()
             return response.json()
