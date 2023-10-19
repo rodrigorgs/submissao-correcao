@@ -170,4 +170,21 @@ class CleaningModel {
   turn(angle) {
     this.turnRobot(angle)
   }
+
+  verifyCell(verifyPresence, item, side) {
+    const deltaAngle = side == "LEFT" ? -90 : side == "RIGHT" ? 90 : 0
+    const direction = this.getHeadingDirection(deltaAngle)
+    const tx = this.robot.position.x + direction.x
+    const ty = this.robot.position.y + direction.y
+
+    if (tx < 0 || tx >= 10 || ty < 0 || ty >= 8) {
+      return false
+    }
+
+    if (verifyPresence) {
+      return this.map[ty][tx] == item
+    } else {
+      return this.map[ty][tx] != item
+    }
+  }
 }

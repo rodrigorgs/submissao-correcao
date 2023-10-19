@@ -116,7 +116,11 @@ async function prompt() {
                 if self.problem_type == 'cleaning':
                     json_string = output.decode().strip().split("\n")[-1]
                     result = json.loads(json_string)
-                    return {"success": result['successful'], "output": output}
+                    success = result['successful']
+                    if testcase.get('output', None) is not None:
+                        relevant_output = '\n'.join(output.decode().strip().split("\n")[:-1]).strip()
+                        success = success and relevant_output == testcase['output'].strip()
+                    return {"success": success, "output": output}
                 else:
                     success = output.decode().strip() == testcase.get('output', '').strip()
                     print({"success": success, "output": output.decode()})
