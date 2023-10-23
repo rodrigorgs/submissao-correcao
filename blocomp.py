@@ -75,6 +75,7 @@ async function prompt() {
         code = code.replace('await window.stageManager', '_cleaningModel')
         code = code.replace('window.stageManager', '_cleaningModel')
         code = code.replace('window.chatManager', '// window.chatManager')
+        code = code.replace('this.log', '// this.log')
         code = '\n'.join(['// ' + line if line.strip().startswith('await') else line for line in code.split('\n')])
         
         full_code += code
@@ -115,12 +116,16 @@ async function prompt() {
 
                 if self.problem_type == 'cleaning':
                     json_string = output.decode().strip().split("\n")[-1]
-                    result = json.loads(json_string)
-                    success = result['successful']
-                    if testcase.get('output', None) is not None:
-                        relevant_output = '\n'.join(output.decode().strip().split("\n")[:-1]).strip()
-                        success = success and relevant_output == testcase['output'].strip()
-                    return {"success": success, "output": output}
+                    try:
+                        result = json.loads(json_string)
+                        success = result['successful']
+                        if testcase.get('output', None) is not None:
+                            relevant_output = '\n'.join(output.decode().strip().split("\n")[:-1]).strip()
+                            success = success and relevant_output == testcase['output'].strip()
+                        return {"success": success, "output": output}
+                    except json.JSONDecodeError:
+                        traceback.print_exc()
+                        print('output:\n', output.decode())
                 else:
                     success = output.decode().strip() == testcase.get('output', '').strip()
                     print({"success": success, "output": output.decode()})
