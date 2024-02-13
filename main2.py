@@ -15,6 +15,8 @@ from blocomp import BlocompRunner
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
+#
+FLUTTER_PROJECT_PATH = os.getenv('FLUTTER_PROJECT_PATH', '~/local/git/aulas/_includes/mobile/problems/flutter_aulas')
 # comma-separated list of ids
 CLASSROOM_ID = os.getenv('CLASSROOM_ID')
 RETEST_WRONG = os.getenv('RETEST_WRONG', 'False') in ('True', 'true')
@@ -177,18 +179,20 @@ class FlutterRunner:
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             # copy files and folders in template/flutter_aulas to tmpdirname
-            os.system(f'cp -r template/flutter_aulas {tmpdirname}/{project_dir}')
+            # os.system(f'cp -r template/flutter_aulas {tmpdirname}/{project_dir}')
+            os.system(f'cp -r {FLUTTER_PROJECT_PATH} {tmpdirname}/{project_dir}')
 
+            test_script_name = script_name.replace(".dart", "_test.dart")
             with open(f'{tmpdirname}/{project_dir}/lib/{script_name}', 'w') as f:
                 f.write(answer)
-            with open(f'{tmpdirname}/{project_dir}/test/{script_name.replace(".dart", "_test.dart")}', 'w') as f:
+            with open(f'{tmpdirname}/{project_dir}/test/{test_script_name}', 'w') as f:
                 f.write(tests)
 
             # Run dart/flutter test
             dart_or_flutter_cmd = 'flutter' if extras['lang'] == 'flutter' else 'dart'
             print(f'Dart or flutter: {dart_or_flutter_cmd}')
             try:
-                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && {dart_or_flutter_cmd} test', shell=True, stderr=subprocess.STDOUT).decode()
+                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && {dart_or_flutter_cmd} test test/{test_script_name}', shell=True, stderr=subprocess.STDOUT).decode()
             except subprocess.CalledProcessError as e:
                 output = e.output.decode()
 
