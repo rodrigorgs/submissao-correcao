@@ -192,7 +192,7 @@ class FlutterRunner:
             dart_or_flutter_cmd = 'flutter' if extras['lang'] == 'flutter' else 'dart'
             print(f'Dart or flutter: {dart_or_flutter_cmd}')
             try:
-                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && {dart_or_flutter_cmd} test test/{test_script_name}', shell=True, stderr=subprocess.STDOUT).decode()
+                output = subprocess.check_output(f'cd {tmpdirname}/{project_dir} && timeout 20s {dart_or_flutter_cmd} test test/{test_script_name}', shell=True, stderr=subprocess.STDOUT).decode()
             except subprocess.CalledProcessError as e:
                 output = e.output.decode()
 
