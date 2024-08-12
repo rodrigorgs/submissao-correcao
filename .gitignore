@@ -3,3 +3,6 @@ venv
 app/
 node_modules
 __pycache__
+template/flutter_aulas/draft
+template/flutter_aulas/md
+

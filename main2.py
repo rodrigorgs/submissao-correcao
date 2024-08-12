@@ -12,6 +12,7 @@ import subprocess
 import traceback
 from blocomp import BlocompRunner
 
+SUBMISSION_BATCH_SIZE = 5
 API_BASE_PATH = os.getenv('SUBMISSAO_API_BASE_PATH')
 USERNAME = os.getenv('SUBMISSAO_USERNAME')
 PASSWORD = os.getenv('SUBMISSAO_PASSWORD')
@@ -270,7 +271,6 @@ def main():
     service = AssignmentService()
     python_script_runner = ScriptRunner()
     api = EzAPI(API_BASE_PATH)
-    SUBMISSION_BATCH_SIZE = 30
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S %z')
 
     api.login(USERNAME, PASSWORD)
